@@ -145,6 +145,25 @@ interface GoReviewDetails {
 	deletions: number;
 	goFilesFound: number;
 	truncated: boolean;
+	projectGoVersion?: string;
+	latestGoVersion?: string;
+}
+
+async function fetchLatestGoVersion(signal?: AbortSignal): Promise<string | undefined> {
+	try {
+		const resp = await fetch("https://go.dev/dl/?mode=json", {
+			signal,
+			headers: { Accept: "application/json" },
+		});
+		if (!resp.ok) return undefined;
+		const releases: any[] = await resp.json();
+		const stable = releases.find((r) => r.stable);
+		if (!stable?.version) return undefined;
+		// "go1.24.3" -> "1.24.3"
+		return stable.version.replace(/^go/, "");
+	} catch {
+		return undefined;
+	}
 }
 
 export default function (pi: ExtensionAPI) {
@@ -163,6 +182,7 @@ export default function (pi: ExtensionAPI) {
 			"Categorize each finding: Bug/Critical, Suggestion, Nit, Good pattern.",
 			"Always cite the mistake number (e.g. #39) and the specific file and line/code fragment.",
 			"End with a verdict: Approve, Request Changes, or Needs Discussion.",
+			"Check the Go version section — flag if the project's go.mod version is significantly behind the latest stable release.",
 			"After reviewing, use go_pkgsite with action='vulns' to check newly added dependencies for known vulnerabilities.",
 			"Use go_pkgsite with action='versions' to check if added dependencies are pinned to the latest version.",
 		],
@@ -175,6 +195,21 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 			const { mode, ref, path: filePath } = params;
+
+			// Read go.mod version + fetch latest stable in parallel
+			const [goModResult, latestGoVersion] = await Promise.all([
+				pi.exec("go", ["mod", "edit", "-json"], { signal, timeout: 5000 }).catch(() => null),
+				fetchLatestGoVersion(signal),
+			]);
+
+			let projectGoVersion: string | undefined;
+			if (goModResult?.code === 0) {
+				try {
+					const modJson = JSON.parse(goModResult.stdout);
+					projectGoVersion = modJson.Go || modJson.Toolchain?.replace(/^go/, "");
+				} catch { /* parse failed, skip */ }
+			}
+
 			const gitArgs: string[] = [];
 
 			switch (mode) {
@@ -234,6 +269,28 @@ export default function (pi: ExtensionAPI) {
 			// Build review prompt
 			let output = `## Go Code Review: ${mode}${ref ? " " + ref : ""}${filePath ? " (" + filePath + ")" : ""}\n\n`;
 			output += `**${goFilesFound}** Go files, **+${insertions}** / **-${deletions}**\n\n`;
+
+			// Go version check
+			if (projectGoVersion || latestGoVersion) {
+				output += `### Go Version\n\n`;
+				output += `- **Project (go.mod):** ${projectGoVersion || "unknown"}\n`;
+				output += `- **Latest stable:** ${latestGoVersion || "unknown"}\n`;
+				if (projectGoVersion && latestGoVersion && projectGoVersion !== latestGoVersion) {
+					const projParts = projectGoVersion.split(".").map(Number);
+					const latestParts = latestGoVersion.split(".").map(Number);
+					const projMinor = projParts[1] || 0;
+					const latestMinor = latestParts[1] || 0;
+					if (projMinor < latestMinor - 1) {
+						output += `- \u26a0\ufe0f **Project is ${latestMinor - projMinor} minor versions behind.** Consider upgrading.\n`;
+					} else if (projMinor < latestMinor || (projParts[2] || 0) < (latestParts[2] || 0)) {
+						output += `- \ud83d\udca1 A newer Go version is available.\n`;
+					}
+				} else if (projectGoVersion && latestGoVersion && projectGoVersion === latestGoVersion) {
+					output += `- \u2705 Up to date.\n`;
+				}
+				output += `\n`;
+			}
+
 			output += `### Diff\n\n\`\`\`diff\n${diffText}\n\`\`\`\n\n`;
 			if (truncated) output += `> Truncated to ${MAX_LINES} lines. Use path param to focus.\n\n`;
 			output += "---\n\n### Review Instructions\n\n";
@@ -241,14 +298,15 @@ export default function (pi: ExtensionAPI) {
 			output += "For each issue: cite **mistake #**, **file:line/fragment**, categorize (Bug/Suggestion/Nit).\n";
 			output += "Note Good patterns. End with **Verdict**: Approve / Request Changes / Needs Discussion.\n";
 			output += "Only flag mistakes **actually present**. Most impactful first.\n\n";
-			output += "**After reviewing the diff**, use `go_pkgsite` to:\n";
-			output += "- Check `vulns` for any newly added or changed dependencies\n";
-			output += "- Check `versions` to verify dependency pins are current\n\n";
+			output += "**Also check:**\n";
+			output += "- Go version in go.mod — flag if significantly behind latest stable\n";
+			output += "- Use `go_pkgsite` action=`vulns` for any newly added or changed dependencies\n";
+			output += "- Use `go_pkgsite` action=`versions` to verify dependency pins are current\n\n";
 			output += GO_MISTAKES;
 
 			return {
 				content: [{ type: "text" as const, text: output }],
-				details: { mode, ref, path: filePath, filesChanged, insertions, deletions, goFilesFound, truncated } as GoReviewDetails,
+				details: { mode, ref, path: filePath, filesChanged, insertions, deletions, goFilesFound, truncated, projectGoVersion, latestGoVersion } as GoReviewDetails,
 			};
 		},
 		renderCall(args, theme, _ctx) {
@@ -274,6 +332,10 @@ export default function (pi: ExtensionAPI) {
 			let summary = theme.fg("accent", details.goFilesFound + " Go files");
 			summary += theme.fg("dim", " | ") + theme.fg("success", "+" + details.insertions) + theme.fg("dim", "/") + theme.fg("error", "-" + details.deletions);
 			summary += theme.fg("dim", " | ") + theme.fg("muted", "100 Go Mistakes checklist");
+			if (details.projectGoVersion) {
+				const goColor = details.latestGoVersion && details.projectGoVersion !== details.latestGoVersion ? "warning" : "success";
+				summary += theme.fg("dim", " | go ") + theme.fg(goColor, details.projectGoVersion);
+			}
 			if (details.truncated) summary += theme.fg("warning", " (truncated)");
 
 			if (expanded) {
