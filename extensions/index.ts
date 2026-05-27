@@ -11,6 +11,7 @@
  *   - Categorizes findings: Bug/Critical, Suggestion, Nit, Good pattern
  *   - Custom TUI rendering for call + result
  *   - System prompt injection so the agent auto-invokes when reviewing Go code
+ *   - Companion go_pkgsite tool (pkgsite.ts) for live pkg.go.dev lookups
  *
  * Based on: "100 Go Mistakes and How to Avoid Them" — https://100go.co/
  */
@@ -162,6 +163,8 @@ export default function (pi: ExtensionAPI) {
 			"Categorize each finding: Bug/Critical, Suggestion, Nit, Good pattern.",
 			"Always cite the mistake number (e.g. #39) and the specific file and line/code fragment.",
 			"End with a verdict: Approve, Request Changes, or Needs Discussion.",
+			"After reviewing, use go_pkgsite with action='vulns' to check newly added dependencies for known vulnerabilities.",
+			"Use go_pkgsite with action='versions' to check if added dependencies are pinned to the latest version.",
 		],
 		parameters: Type.Object({
 			mode: StringEnum(["working", "staged", "commit", "range", "all"] as const, {
@@ -238,6 +241,9 @@ export default function (pi: ExtensionAPI) {
 			output += "For each issue: cite **mistake #**, **file:line/fragment**, categorize (Bug/Suggestion/Nit).\n";
 			output += "Note Good patterns. End with **Verdict**: Approve / Request Changes / Needs Discussion.\n";
 			output += "Only flag mistakes **actually present**. Most impactful first.\n\n";
+			output += "**After reviewing the diff**, use `go_pkgsite` to:\n";
+			output += "- Check `vulns` for any newly added or changed dependencies\n";
+			output += "- Check `versions` to verify dependency pins are current\n\n";
 			output += GO_MISTAKES;
 
 			return {
