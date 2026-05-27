@@ -1,17 +1,17 @@
 {
   "name": "pi-go-review",
-  "version": "1.1.0",
-  "description": "Review Go code changes against the '100 Go Mistakes and How to Avoid Them' checklist (https://100go.co/). Registers a go_review tool that analyzes git diffs against all 101 common Go mistakes.",
-  "keywords": ["pi-package", "golang", "go", "code-review", "100-go-mistakes", "pi-extension"],
+  "version": "1.2.0",
+  "description": "Review Go code changes against the '100 Go Mistakes' checklist (https://100go.co/) and query the pkg.go.dev API for package metadata, versions, symbols, and vulnerabilities.",
+  "keywords": ["pi-package", "golang", "go", "code-review", "100-go-mistakes", "pkgsite", "pkg-go-dev", "vulnerabilities", "pi-extension"],
   "license": "MIT",
   "author": "Luciano Junior <luciano@lucianojr.com.br>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lucianojr/pi-go-review.git"
+    "url": "git+https://github.com/iamlucianojr/pi-go-review.git"
   },
-  "homepage": "https://github.com/lucianojr/pi-go-review#readme",
+  "homepage": "https://github.com/iamlucianojr/pi-go-review#readme",
   "bugs": {
-    "url": "https://github.com/lucianojr/pi-go-review/issues"
+    "url": "https://github.com/iamlucianojr/pi-go-review/issues"
   },
   "files": ["extensions", "README.md", "LICENSE"],
   "pi": {
